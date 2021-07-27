@@ -1,0 +1,7 @@
+.credentials
+node_modules
+tmp
+client_secret.json
+quickstart.js
+samplevid.mp4
+upload.js
