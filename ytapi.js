@@ -6,29 +6,27 @@ const router = require("express").Router();
 
 // If modifying these scopes, delete the previously saved credentials
 // at __dirname/.credentials
-// scopes are set to youtube.readonly, youtube.upload
+// scopes are only set to youtube.readonly, youtube.upload
+// these scopes help retrieve channel data and upload videos
 const SCOPES = process.env.YTAPI_MAIN_SCOPES.split(" ");
 
 const TOKEN_DIR = path.join(__dirname, process.env.YTAPI_TOKEN_DIR);
 const TOKEN_PATH = path.join(TOKEN_DIR, process.env.YTAPI_TOKEN_FILE);
 
-const REDIRECTURLS = process.env.YTAPI_GOOGLE_REDIRECT_URL.split(" ");
-
 const OAUTH2CLIENT = new OAuth2(
   process.env.YTAPI_GOOGLE_CLIENT_ID,
   process.env.YTAPI_GOOGLE_CLIENT_SECRET,
-  REDIRECTURLS[0] //This redirect goes to /auth/admin after google sign in
+  process.env.YTAPI_GOOGLE_REDIRECT_URL
 );
 
-//route done
 router.get("/", (req, res) => {
-  //Checks if app is authorized
+  // Checks if app is authorized
   if (!fs.existsSync(TOKEN_PATH)) {
-    //Authorize the app to use your google account for youtube uploads.
+    // Authorize the app to use your
+    // google account for youtube uploads.
     const url = generateGoogleAuthUrl(SCOPES);
 
-    //This is the generated view
-    //After signing in to google, it redirects to /auth/admin
+    // Sends the url to authorize the app
     return res.send(`
       <p>No channel is signed in.</p>
       <p>Authorize this app by signing in to your google account.</p>
@@ -37,13 +35,12 @@ router.get("/", (req, res) => {
     `);
   }
 
-  //Continue if authorized
-  //checks if the browser is opened for the first time and .credentials already exists
+  // Continue if authorized
+  // Checks if credentials are unset
   if (Object.keys(OAUTH2CLIENT.credentials).length === 0) {
     setCredentials(res);
   }
 
-  //This is the generated view
   res.send(`
     <p><a href="/ytapi"> Home </a></p>
     <p><a href="/ytapi/channel"> View channel </a></p>
@@ -51,19 +48,20 @@ router.get("/", (req, res) => {
   `);
 });
 
-//route done
 router.get("/channel", (req, res) => {
+  // Checks if credentials are unset
   if (Object.keys(OAUTH2CLIENT.credentials).length === 0) {
-    setCredentials(res);
+    return res.redirect("/ytapi");
   }
-  console.log(OAUTH2CLIENT.credentials);
+
   getChannel(res);
 });
 
 router.get("/upload", (req, res) => {
   if (Object.keys(OAUTH2CLIENT.credentials).length === 0) {
-    setCredentials(res);
+    return res.redirect("/ytapi");
   }
+
   res.send(`
     <a href="ytapi">Home</a>
     <h3>Upload file</h3>
@@ -72,38 +70,50 @@ router.get("/upload", (req, res) => {
       method="post"
       encType="multipart/form-data"
       >
-      <input type="file" name="target_video" accept="video/*" />
+      <input type="text" name="title" placeholder="title" required />
+      <input type="text" name="description" placeholder="description" required />
+      <input type="text" name="tags" placeholder="tags" required />
+      <p>Note: Please separate the tags with commas. (i.e. Funny, Amazing, etc.)</p>
+      <input type="file" name="target_video" accept="video/*" required />
       <input type="submit" value="upload" />
     </form>
   `);
 });
 
 router.post("/upload", async (req, res) => {
+  const { title, description } = req.body;
+  const tags = req.body.tags.split(",");
   const video = req.files ? req.files.target_video : "";
+
   if (!video)
     return res.send(`
     <p>No video uploaded.</p>
     <a href="/ytapi">Home</a>
     <a href="/ytapi/upload">Back to upload</a>
   `);
+
   const response = await uploadVideo(
-    "samptitle5",
-    "sampdescription",
-    ["tag1", "tag2"],
+    title,
+    description,
+    tags,
     video.tempFilePath
   );
+
+  // Removes video in tmp folder after upload
   fs.unlinkSync(video.tempFilePath);
-  // console.log("responsible", response);
-  if (response.errors) return res.send("Upload error ");
+
+  if (response.errors) return res.send("Upload error!");
+
   res.send(`
     Video uploaded Successfully.
-    ${response}
+    <a href="/ytapi/channel" > View Channel </a>
   `);
 });
 
-//route done
+// Redirect endpoint after signing in to google
 router.get("/auth/admin", async (req, res) => {
   const code = decodeURIComponent(req.query.code);
+
   if (code) {
     try {
       const response = await OAUTH2CLIENT.getToken(code);
@@ -145,6 +155,7 @@ function storeToken(token) {
       throw err;
     }
   }
+
   fs.writeFile(TOKEN_PATH, JSON.stringify(token), (err) => {
     if (err) throw err;
     console.log("Token stored to " + TOKEN_PATH);
@@ -153,11 +164,11 @@ function storeToken(token) {
 
 function getChannel(res) {
   const service = google.youtube("v3");
+
   service.channels.list(
     {
       auth: OAUTH2CLIENT,
       part: "snippet,contentDetails,statistics",
-      // forUsername: "GoogleDevelopers",
       mine: true,
     },
     (err, response) => {
@@ -185,8 +196,9 @@ function getChannel(res) {
 
 async function uploadVideo(title, description, tags, videoFilePath) {
   const service = google.youtube("v3");
+
   try {
-    const returnValue = await service.videos.insert({
+    const response = await service.videos.insert({
       auth: OAUTH2CLIENT,
       part: "snippet,status",
       requestBody: {
@@ -197,13 +209,15 @@ async function uploadVideo(title, description, tags, videoFilePath) {
         },
         status: {
           privacyStatus: "private",
+          // video set to private for testing
         },
       },
       media: {
         body: fs.createReadStream(videoFilePath),
       },
     });
-    return returnValue.data;
+
+    return response.data;
   } catch (ex) {
     console.log(ex);
     return ex;
