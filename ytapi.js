@@ -162,36 +162,36 @@ function storeToken(token) {
   });
 }
 
-function getChannel(res) {
+async function getChannel(res) {
   const service = google.youtube("v3");
 
-  service.channels.list(
-    {
+  try {
+    const response = await service.channels.list({
       auth: OAUTH2CLIENT,
       part: "snippet,contentDetails,statistics",
       mine: true,
-    },
-    (err, response) => {
-      if (err) return res.send("The API returned an error: " + err);
+    });
 
-      const channels = response.data.items;
-      if (channels.length == 0) return res.send("No channel found.");
+    const channels = response.data.items;
+    if (channels.length == 0) return res.send("No channel found.");
 
-      res.send(`
-          <a href="/ytapi">Home</a>
-          <p>This channel's id is ${channels[0].id}</p> 
-          <p>with title ${channels[0].snippet.title}</p> 
-          <p>and has ${channels[0].statistics.viewCount}
-          views.</p>
-          <a
-          href="https:/youtube.com/channel/${channels[0].id}"
-          target="_blank"
-          rel="noopener noreferrer"
-          >
-          Visit channel</a>
-        `);
-    }
-  );
+    res.send(`
+            <a href="/ytapi">Home</a>
+            <p>This channel's id is ${channels[0].id}</p>
+            <p>with title ${channels[0].snippet.title}</p>
+            <p>and has ${channels[0].statistics.viewCount}
+            views.</p>
+            <a
+            href="https:/youtube.com/channel/${channels[0].id}"
+            target="_blank"
+            rel="noopener noreferrer"
+            >
+            Visit channel</a>
+          `);
+  } catch (error) {
+    console.log("The api returned an error. ", error);
+    res.send("The api returned an error.");
+  }
 }
 
 async function uploadVideo(title, description, tags, videoFilePath) {
